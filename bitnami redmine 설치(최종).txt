@@ -1,0 +1,252 @@
+# smtp 설정시, 동기화 한 이메일 주소 변경!
+
+서버 관리자 -> 로컬 서버 -> 역할 및 기능 추가 -> hyper-v 설치
+
+hyper-v 관리자 구동
+
+내부 네트워크 가상 스위치를 먼저 생성
+
+새로만들기 -> 새 가상 컴퓨터
+1세대
+시작메모리 : 2048
+하드 150
+
+# 우분투 설치
+
+# 루트 권한 비밀번호 설정
+sudo passwd root
+su root
+
+# SSH 설치하여 putty, terminus등 편하게 사용
+sudo apt-get install ssh
+sudo apt-get install openssh-server
+sudo /etc/init.d/ssh restart
+
+# bitnami-redmine 설치
+sudo chmod 775 bitnami-redmine-4.1.0-0-linux-x64-installer.run
+sudo ./bitnami-redmine-4.1.0-0-linux-x64-installer.run
+bitnami remine 설치완료 후 
+sudo reboot
+
+# 테이블 메모리 설정
+sudo nano /opt/redmine-4.1.0-0/mysql/my.cnf 
+[mysqld] 맨밑에
+max_heap_table_size = 256M
+tmp_table_size = 256M
+
+# bitnami 가동
+sudo sh /opt/redmine-4.1.0-0/ctlscript.sh start
+
+# 원하는 크기로 설정되었는지 확인
+sudo /opt/redmine-4.1.0-0/mysql/bin/mysql -u bitnami -p bitnami_redmine --password=b1a5d301a4
+SHOW VARIABLES LIKE 'max_heap_table_size';
+SHOW VARIABLES LIKE 'tmp_table_size';
+exit
+
+# mysql 마이그레이션
+sudo /opt/redmine-4.1.0-0/mysql/bin/mysql -u bitnami -p bitnami_redmine --password=b1a5d301a4 < /home/testadmin/backup_20200109.sql
+sudo /opt/redmine-4.1.0-0/mysql/bin/mysql -u bitnami -p bitnami_redmine --password=b1a5d301a4
+drop table queries_roles;
+drop table custom_fields_roles;
+drop table email_addresses;
+drop table roles_managed_roles;
+drop table imports;
+drop table import_items;
+drop table custom_field_enumerations;
+cd /opt/redmine-4.1.0-0/apps/redmine/htdocs/
+sudo /opt/redmine-4.1.0-0/ruby/bin/bundle exec rake db:migrate RAILS_ENV=production
+
+# redmine 저장소 설정
+sudo /opt/redmine-4.1.0-0/mysql/bin/mysql -u bitnami -p bitnami_redmine --password=b1a5d301a4
+
+
+# redmine 첨부파일들을 아래의 경로로 이전한다
+/opt/redmine-4.1.0-0/apps/redmine/htdocs/files
+
+# redmine smtp 설정
+
+# svn 설정
+# 저장소 폴더 생성
+cd /opt/redmine-4.1.0-0/subversion
+sudo mkdir repositories
+authz 파일을 repositories 폴더 안에 저장
+
+# svn 사용자 등록
+맨 처음에 실행시에는 아래의 커맨드 실행
+sudo /opt/redmine-4.1.0-0/apache2/bin/htpasswd -c /opt/redmine-4.1.0-0/subversion/repositories/htpasswd jylee
+그다음부터는 아래의 커맨드로 사용자 추가(위의 사항을 따르지 않으면, 옵션(-c)의 유무로 인해 전체 사용자가 초기화되어질 수 있음)
+sudo /opt/redmine-4.1.0-0/apache2/bin/htpasswd /opt/redmine-4.1.0-0/subversion/repositories/htpasswd jylee
+
+# svn url 설정
+sudo nano /opt/redmine-4.1.0-0/apache2/conf/extra/httpd-subversion.conf
+아래 내용 붙여넣기 후 저장
+<Location /svn/repositories>
+        DAV svn
+
+        SVNListParentPath on
+        SVNParentPath "/opt/redmine-4.1.0-0/subversion/repositories/"
+        AuthType Basic
+        AuthName "SVN Repositories"
+        AuthUserFile "/opt/redmine-4.1.0-0/subversion/repositories/htpasswd"
+        Require valid-user
+        AuthzSVNAccessFile "/opt/redmine-4.1.0-0/subversion/repositories/authz"
+</Location>
+
+sudo nano /opt/redmine-4.1.0-0/apache2/conf/httpd.conf
+아래의 커맨드가 활성화되어있는지 확인
+LoadModule authz_svn_module modules/mod_authz_svn.so
+맨 아래에 아래의 커맨드 추가
+# svn Repository url
+Include "/opt/redmine-4.1.0-0/apache2/conf/extra/httpd-subversion.conf"
+
+# svn 백업
+svnadmin dump 리포지토리 경로 > 백업파일 경로
+(리비전 범위 제한)
+svnadmin dump 리포지토리 경로 -r 10:20  > 백업파일 경로
+# svn 복원(폴더, 저장소 생성 후 복원한다)
+cd /opt/redmine-4.1.0-0/subversion/repositories/
+mkdir BlueSky
+mkdir IconSoft_Auth_Manager
+mkdir IconSoft_IDriver
+mkdir IconSoft_IDriver_2013
+mkdir IconSoft_IQuick
+mkdir IconSoft_Mobile_Message
+mkdir IconSoft_Server_Team
+mkdir IconSoft_Sms
+
+/opt/redmine-4.1.0-0/subversion/bin/svnadmin create BlueSky/
+/opt/redmine-4.1.0-0/subversion/bin/svnadmin create IconSoft_Auth_Manager/
+/opt/redmine-4.1.0-0/subversion/bin/svnadmin create IconSoft_IDriver/
+/opt/redmine-4.1.0-0/subversion/bin/svnadmin create IconSoft_IDriver_2013/
+/opt/redmine-4.1.0-0/subversion/bin/svnadmin create IconSoft_IQuick/
+/opt/redmine-4.1.0-0/subversion/bin/svnadmin create IconSoft_Mobile_Message/
+/opt/redmine-4.1.0-0/subversion/bin/svnadmin create IconSoft_Server_Team/
+/opt/redmine-4.1.0-0/subversion/bin/svnadmin create IconSoft_Sms/
+
+/opt/redmine-4.1.0-0/subversion/bin/svnadmin load BlueSky/ < /home/iconsoft/20200116_bluesky.dump
+/opt/redmine-4.1.0-0/subversion/bin/svnadmin load IconSoft_Auth_Manager/ < /home/iconsoft/20200116_iconsoft_auth_manager.dump
+/opt/redmine-4.1.0-0/subversion/bin/svnadmin load IconSoft_IDriver/ < /home/iconsoft/20200116_iconsoft_idriver.dump
+/opt/redmine-4.1.0-0/subversion/bin/svnadmin load IconSoft_IDriver_2013/ < /home/iconsoft/20200116_IconSoft_IDriver_2013.dump
+/opt/redmine-4.1.0-0/subversion/bin/svnadmin load IconSoft_IQuick/ < /home/iconsoft/20200116_iconsoft_iquick.dump
+/opt/redmine-4.1.0-0/subversion/bin/svnadmin load IconSoft_Mobile_Message/ < /home/iconsoft/20200116_iconsoft_mobile_message.dump
+/opt/redmine-4.1.0-0/subversion/bin/svnadmin load IconSoft_Server_Team/ < /home/iconsoft/20200116_iconsoft_server_team.dump
+/opt/redmine-4.1.0-0/subversion/bin/svnadmin load IconSoft_Sms/ < /home/iconsoft/20200116_iconsoft_sms.dump
+
+sudo chmod -R 777 /opt/redmine-4.1.0-0/subversion/repositories/BlueSky/*
+sudo chmod -R 777 /opt/redmine-4.1.0-0/subversion/repositories/IconSoft_Auth_Manager/*
+sudo chmod -R 777 /opt/redmine-4.1.0-0/subversion/repositories/IconSoft_IDriver/*
+sudo chmod -R 777 /opt/redmine-4.1.0-0/subversion/repositories/IconSoft_IDriver_2013/*
+sudo chmod -R 777 /opt/redmine-4.1.0-0/subversion/repositories/IconSoft_IQuick/*
+sudo chmod -R 777 /opt/redmine-4.1.0-0/subversion/repositories/IconSoft_Mobile_Message/*
+sudo chmod -R 777 /opt/redmine-4.1.0-0/subversion/repositories/IconSoft_Server_Team/*
+sudo chmod -R 777 /opt/redmine-4.1.0-0/subversion/repositories/IconSoft_Sms/*
+
+# gitlab 설치
+sudo apt-get update
+sudo apt-get install -y curl openssh-server ca-certificates
+sudo apt-get install -y postfix
+(systemctl reload postfix)
+internet site
+iconsoft.co.kr
+curl https://packages.gitlab.com/install/repositories/gitlab/gitlab-ee/script.deb.sh | sudo bash
+sudo EXTERNAL_URL="http://ip주소:48000" apt-get install gitlab-ee
+
+# gitlab 설치 후 설정 변경
+sudo nano /etc/gitlab/gitlab.rb
+EXTERNAL_URL의 설정 변경
+설정 후 적용 커맨드
+sudo gitlab-ctl reconfigure
+
+# svn -> git
+Git Bash 창에서
+git svn clone "svn저장소 주소" --no-metadata -A "커밋터 리스트.txt" "git폴더"
+리비전 범위 선택
+git svn clone "svn저장소 주소" --no-metadata -A "커밋터 리스트.txt" "git폴더" -r1:HEAD
+
+
+# gitlab smtp 설정
+# gitlab_rails['gitlab_email_from'] = 'example@example.com'
+# gitlab_rails['gitlab_email_display_name'] = 'Example'
+# gitlab_rails['gitlab_email_reply_to'] = 'noreply@example.com'
+gitlab_rails['gitlab_email_from'] = 'gitlab@iconsoft.co.kr'
+gitlab_rails['gitlab_email_display_name'] = '아이콘소프트'
+gitlab_rails['gitlab_email_reply_to'] = 'sangil-mir@iconsoft.co.kr'
+# gitlab_rails['smtp_enable'] = true
+# gitlab_rails['smtp_address'] = "smtp.server"
+# gitlab_rails['smtp_port'] = 465
+# gitlab_rails['smtp_user_name'] = "smtp user"
+# gitlab_rails['smtp_password'] = "smtp password"
+# gitlab_rails['smtp_domain'] = "example.com"
+# gitlab_rails['smtp_authentication'] = "login"
+# gitlab_rails['smtp_enable_starttls_auto'] = true
+# gitlab_rails['smtp_tls'] = false
+gitlab_rails['smtp_enable'] = true
+gitlab_rails['smtp_address'] = "mail.iconsoft.co.kr"
+gitlab_rails['smtp_port'] = 465
+gitlab_rails['smtp_user_name'] = "jylee@iconsoft.co.kr"
+gitlab_rails['smtp_password'] = "wp614314!"
+gitlab_rails['smtp_domain'] = "mail.iconsoft.co.kr"
+gitlab_rails['smtp_authentication'] = "login"
+gitlab_rails['smtp_enable_starttls_auto'] = true
+gitlab_rails['smtp_tls'] = false
+gitlab_rails['smtp_openssl_verify_mode'] = 'none' -> 'peer'
+# 메일 전송 테스트
+sudo gitlab-rails console
+Notify.test_email('jylee@iconsoft.co.kr', 'Message Subject', 'Message Body').deliver_now
+
+# redmine 포트 번호 변경
+1. /opt/redmine-4.1.0-0/apache2/conf/httpd.conf 파일에서 Listen 80 -> 48000 로 수정
+2. /opt/redmine-4.1.0-0/apache2/conf/bitnami/bitnami.conf 파일에서 NameVirtualHost *:80 -> 48000 로 수정
+3. /opt/redmine-4.1.0-0/apache2/conf/bitnami/bitnami.conf 파일에서 <VirtualHost _default_:80> -> 48000 로 수정
+
+# gitlab url 도메인으로 설정
+sudo nano /etc/gitlab/gitlab.rb
+external_url 'http://dev.iconsoft.co.kr:49000'
+sudo gitlab-ctl reconfigure
+
+# 서비스 등록 및 부팅시 자동실행
+# gitlab의 경우, 부팅시 자동실행되기 때문에 redmine만 설정을 해준다
+1. root 권한으로 접속
+2. cd /etc/init.d
+3. /etc/init.d 에 redmine 파일을 생성하고 아래의 내용을 저장
+
+#!/bin/bash -e
+
+### BEGIN INIT INFO
+# Provides: redmine
+# Required-Start: $network
+# Required-Stop: $network
+# Default-Start: 2 3 4 5
+# Default-Stop: 0 1 6
+# Short-Description: Start/Stop/Restart redmine
+### END INIT INFO
+
+case "$1" in
+        start)
+                echo -n "start redmine : "
+                /opt/redmine-4.1.0-0/ctlscript.sh start
+                echo
+        ;;
+        stop)
+                echo -n "stop redmine : "
+                /opt/redmine-4.1.0-0/ctlscript.sh stop
+                echo
+        ;;
+        restart)
+                echo -n "restart redmine : "
+                /opt/redmine-4.1.0-0/ctlscript.sh restart
+                echo
+        ;;
+        *)
+                echo "usage : $0 {start|stop|restart}"
+        exit 1
+        ;;
+esac
+exit 0
+
+4. chmod 755 redmine
+5. update-rc.d redmine defaults
+6. ls rc?.d 로 각 런 레벨 별로 redmine이 링크되어있는지 확인
+7. reboot
+
+
